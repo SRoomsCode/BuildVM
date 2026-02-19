@@ -81,6 +81,33 @@ try {
     $vhdFolder = Join-Path -Path $env:Public -ChildPath 'Documents\Hyper-V\Virtual hard disks'
     $vmName = Generate-UniqueVmName -Prefix 'WIN-' -RandomLength 7 -VhdFolder $vhdFolder
     Write-Host "Generated unique VM name: $vmName"
+        # Generate a unique VM name with prefix WIN- and 7 random chars, allow override
+        if (-not (Test-Path -Path $vhdFolder)) { New-Item -Path $vhdFolder -ItemType Directory -Force | Out-Null }
+        $generatedName = Generate-UniqueVmName -Prefix 'WIN-' -RandomLength 7 -VhdFolder $vhdFolder
+        Write-Host "Generated unique VM name: $generatedName"
+        $userInput = Read-Host 'Press Enter to accept the generated name, or enter a custom VM name to override'
+        if ([string]::IsNullOrWhiteSpace($userInput)) {
+            $vmName = $generatedName
+        }
+        else {
+            while ($true) {
+                $candidate = $userInput
+                $existingVmNames = @()
+                try { $existingVmNames = (Get-VM | Select-Object -ExpandProperty Name) } catch { $existingVmNames = @() }
+                $existingVhds = Get-ChildItem -Path $vhdFolder -Filter *.vhd* -File -ErrorAction SilentlyContinue | Select-Object -ExpandProperty BaseName
+                if ($existingVmNames -contains $candidate -or $existingVhds -contains $candidate) {
+                    Write-Host "Name '$candidate' already exists."
+                    $userInput = Read-Host "Enter a different custom VM name, or press Enter to accept generated name: $generatedName"
+                    if ([string]::IsNullOrWhiteSpace($userInput)) { $vmName = $generatedName; break }
+                    continue
+                }
+                else {
+                    $vmName = $candidate
+                    break
+                }
+            }
+        }
+        Write-Host "Using VM name: $vmName"
 
     # Default locations and sizes
     $vhdFolder = Join-Path -Path $env:Public -ChildPath 'Documents\Hyper-V\Virtual hard disks'
