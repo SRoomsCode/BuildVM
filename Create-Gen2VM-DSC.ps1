@@ -1,0 +1,151 @@
+<#
+Create-Gen2VM-DSC.ps1
+
+Interactive wrapper + DSC configuration to create a Hyper-V Gen 2 VM.
+
+Usage: run this script from an elevated PowerShell session:
+    .\Create-Gen2VM-DSC.ps1
+
+It will list ISOs found in C:\Users\sroom\OneDrive\Documents\ISO and
+prompt you to choose one, then compile and apply a DSC configuration that
+creates a Generation 2 VM attached to the "Default Switch" with:
+- Dynamic memory (max 8 GB)
+- 4 CPUs
+- 64 GB dynamically expanding VHDX
+#>
+
+param()
+
+function Select-IsoFromDirectory {
+    param(
+        [string]$IsoDir = 'C:\Users\sroom\OneDrive\Documents\ISO'
+    )
+    if (-not (Test-Path -Path $IsoDir)) {
+        throw "ISO directory not found: $IsoDir"
+    }
+
+    $isos = Get-ChildItem -Path $IsoDir -Filter *.iso -File -ErrorAction SilentlyContinue | Sort-Object Name
+    if (-not $isos -or $isos.Count -eq 0) {
+        throw "No .iso files found in $IsoDir"
+    }
+
+    for ($i = 0; $i -lt $isos.Count; $i++) {
+        Write-Host "[$($i+1)] $($isos[$i].Name)"
+    }
+
+    $selection = Read-Host "Select ISO by number (1..$($isos.Count))"
+    if (-not ($selection -as [int]) -or $selection -lt 1 -or $selection -gt $isos.Count) {
+        throw "Invalid selection"
+    }
+
+    return $isos[$selection - 1].FullName
+}
+
+function New-RandomString {
+    param(
+        [int]$Length = 7
+    )
+    $chars = ('A'..'Z') + ('0'..'9')
+    -join (1..$Length | ForEach-Object { $chars | Get-Random })
+}
+
+function Generate-UniqueVmName {
+    param(
+        [string]$Prefix = 'WIN-',
+        [int]$RandomLength = 7,
+        [string]$VhdFolder
+    )
+
+    if (-not (Test-Path -Path $VhdFolder)) { New-Item -Path $VhdFolder -ItemType Directory -Force | Out-Null }
+
+    $existingVmNames = @()
+    try { $existingVmNames = (Get-VM | Select-Object -ExpandProperty Name) } catch { $existingVmNames = @() }
+    $existingVhds = Get-ChildItem -Path $VhdFolder -Filter *.vhd* -File -ErrorAction SilentlyContinue | Select-Object -ExpandProperty BaseName
+
+    for ($i = 0; $i -lt 200; $i++) {
+        $candidate = "$Prefix$(New-RandomString -Length $RandomLength)"
+        if ($existingVmNames -contains $candidate) { continue }
+        if ($existingVhds -contains $candidate) { continue }
+        return $candidate
+    }
+
+    throw "Unable to generate a unique VM name after multiple attempts."
+}
+
+try {
+    Write-Host 'Discovering ISOs...'
+    $isoPath = Select-IsoFromDirectory
+    Write-Host "Selected: $isoPath"
+
+    # Generate a unique VM name with prefix WIN- and 7 random chars
+    $vhdFolder = Join-Path -Path $env:Public -ChildPath 'Documents\Hyper-V\Virtual hard disks'
+    $vmName = Generate-UniqueVmName -Prefix 'WIN-' -RandomLength 7 -VhdFolder $vhdFolder
+    Write-Host "Generated unique VM name: $vmName"
+
+    # Default locations and sizes
+    $vhdFolder = Join-Path -Path $env:Public -ChildPath 'Documents\Hyper-V\Virtual hard disks'
+    if (-not (Test-Path -Path $vhdFolder)) { New-Item -Path $vhdFolder -ItemType Directory -Force | Out-Null }
+    $vhdPath = Join-Path -Path $vhdFolder -ChildPath "$vmName.vhdx"
+
+    $startupBytes = 4GB
+    $maximumBytes = 8GB
+    $vhdSizeBytes = 64GB
+    $processorCount = 4
+    $switchName = 'Default Switch'
+
+    Configuration NewGen2VM
+    {
+        param(
+            [string]$VMName,
+            [string]$IsoPath,
+            [string]$VhdPath,
+            [uint64]$VhdSizeBytes,
+            [uint64]$StartupBytes,
+            [uint64]$MaximumBytes,
+            [int]$ProcessorCount,
+            [string]$SwitchName
+        )
+
+        Node 'localhost' {
+            Script EnsureGen2VM {
+                GetScript = {
+                    $vm = Get-VM -Name $using:VMName -ErrorAction SilentlyContinue
+                    return @{ VM = if ($vm) { $vm.Name } else { $null } }
+                }
+
+                TestScript = {
+                    $vm = Get-VM -Name $using:VMName -ErrorAction SilentlyContinue
+                    return $vm -ne $null
+                }
+
+                SetScript = {
+                    if (Get-VM -Name $using:VMName -ErrorAction SilentlyContinue) {
+                        Write-Output "VM '$($using:VMName)' already exists; skipping creation."
+                        return
+                    }
+
+                    New-VM -Name $using:VMName -Generation 2 -MemoryStartupBytes $using:StartupBytes -NewVHDPath $using:VhdPath -NewVHDSizeBytes $using:VhdSizeBytes -SwitchName $using:SwitchName | Out-Null
+                    Set-VMProcessor -VMName $using:VMName -Count $using:ProcessorCount
+                    Set-VMMemory -VMName $using:VMName -DynamicMemoryEnabled $true -StartupBytes $using:StartupBytes -MaximumBytes $using:MaximumBytes
+                    # Attach ISO to virtual DVD drive
+                    Add-VMDvdDrive -VMName $using:VMName -Path $using:IsoPath
+                }
+            }
+        }
+    }
+
+    $configPath = Join-Path -Path (Get-Location) -ChildPath "${vmName}_DSC"
+    if (Test-Path -Path $configPath) { Remove-Item -Path $configPath -Recurse -Force }
+
+    Write-Host 'Compiling DSC configuration...'
+    NewGen2VM -OutputPath $configPath -VMName $vmName -IsoPath $isoPath -VhdPath $vhdPath -VhdSizeBytes $vhdSizeBytes -StartupBytes $startupBytes -MaximumBytes $maximumBytes -ProcessorCount $processorCount -SwitchName $switchName
+
+    Write-Host 'Applying DSC configuration (this requires elevation)...'
+    Start-DscConfiguration -Path $configPath -Wait -Verbose -Force
+
+    Write-Host "Done. VM '$vmName' should be created (or already existed)."
+}
+catch {
+    Write-Error "Error: $_"
+    exit 1
+}
