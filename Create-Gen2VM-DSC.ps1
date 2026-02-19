@@ -139,7 +139,7 @@ function Invoke-CreateGen2VM {
 
                     TestScript = {
                         $vm = Get-VM -Name $using:VMName -ErrorAction SilentlyContinue
-                        return $vm -ne $null
+                        return $null -ne $vm
                     }
 
                     SetScript = {
