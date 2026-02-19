@@ -69,15 +69,14 @@ Describe 'Create-Gen2VM-DSC functions' {
         }
 
         It 'returns selected ISO full path when ISOs present' {
+            $isoDir = 'C:\Users\sroom\OneDrive\Documents\ISO'
             Mock -CommandName Get-ChildItem -MockWith {
-                return @( [PSCustomObject]@{ Name = 'a.iso'; FullName = 'C:\iso\a.iso' }, [PSCustomObject]@{ Name = 'b.iso'; FullName = 'C:\iso\b.iso' } )
+                return @( [PSCustomObject]@{ Name = 'a.iso'; FullName = "$isoDir\a.iso" }, [PSCustomObject]@{ Name = 'b.iso'; FullName = "$isoDir\b.iso" } )
             }
             Mock -CommandName Read-Host -MockWith { '2' }
 
-            $result = Get-IsoFromDirectory -IsoDir 'C:\iso'
-            $result | Should -Be 'C:\iso\b.iso'
-            Remove-Mock -CommandName Get-ChildItem
-            Remove-Mock -CommandName Read-Host
+            $result = Get-IsoFromDirectory -IsoDir $isoDir
+            $result | Should -Be "$isoDir\b.iso"
         }
     }
 
@@ -92,10 +91,6 @@ Describe 'Create-Gen2VM-DSC functions' {
             $vhdFolder = 'C:\vhds'
             $name = New-UniqueVmName -Prefix 'WIN-' -RandomLength 7 -VhdFolder $vhdFolder
             $name | Should -Match '^WIN-[A-Z0-9]{7}$'
-
-            Remove-Mock -CommandName New-RandomString
-            Remove-Mock -CommandName Get-VM
-            Remove-Mock -CommandName Get-ChildItem
         }
 
         It 'throws if unable to find unique name after many attempts' {
@@ -105,10 +100,6 @@ Describe 'Create-Gen2VM-DSC functions' {
             Mock -CommandName Get-ChildItem -MockWith { @( [PSCustomObject]@{ BaseName = 'WIN-DUPLATE' } ) }
 
             { New-UniqueVmName -Prefix 'WIN-' -RandomLength 7 -VhdFolder 'C:\vhds' } | Should -Throw
-
-            Remove-Mock -CommandName New-RandomString
-            Remove-Mock -CommandName Get-VM
-            Remove-Mock -CommandName Get-ChildItem
         }
     }
 }
