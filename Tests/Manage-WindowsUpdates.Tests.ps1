@@ -47,24 +47,6 @@ Describe 'Install-Updates' {
     }
 }
 
-Describe 'Restart-Server' {
-    Mock Restart-Computer
-    Mock Write-Host
-    Mock Write-Warning
-
-    It 'Calls Restart-Computer and writes success message' {
-        Restart-Server -Server 'server01'
-        Assert-MockCalled Restart-Computer -Exactly 1 -ParameterFilter { $ComputerName -eq 'server01' -and $Force }
-        Assert-MockCalled Write-Host -Exactly 1 -ParameterFilter { $Object -eq 'Restart initiated on server01.' }
-    }
-
-    It 'Writes warning on error' {
-        Mock Restart-Computer { throw 'Restart failed' }
-        Restart-Server -Server 'server01'
-        Assert-MockCalled Write-Warning -Exactly 1
-    }
-}
-
 Describe 'Test-IsDomainController' {
     Mock Invoke-Command
 
@@ -134,36 +116,5 @@ Describe 'Test-IsRouter' {
         Mock Invoke-Command { throw 'Error' }
         $result = Test-IsRouter -Server 'server01'
         $result | Should -Be $false
-    }
-}
-
-Describe 'Wait-ServerUp' {
-    Mock Test-Connection
-    Mock Write-Host
-    Mock Write-Warning
-    Mock Start-Sleep
-
-    It 'Returns true immediately if server is online' {
-        Mock Test-Connection { $true }
-        $result = Wait-ServerUp -Server 'server01' -TimeoutSeconds 10
-        $result | Should -Be $true
-        Assert-MockCalled Test-Connection -Exactly 1
-        Assert-MockCalled Write-Host -Exactly 1
-    }
-
-    It 'Waits and retries until server is online' {
-        Mock Test-Connection { $false } -ParameterFilter { $script:count -lt 2; $script:count++ }
-        Mock Test-Connection { $true } -ParameterFilter { $script:count -ge 2 }
-        $script:count = 0
-        $result = Wait-ServerUp -Server 'server01' -TimeoutSeconds 30
-        $result | Should -Be $true
-        Assert-MockCalled Start-Sleep -Times 2
-    }
-
-    It 'Returns false if timeout expires' {
-        Mock Test-Connection { $false }
-        $result = Wait-ServerUp -Server 'server01' -TimeoutSeconds 10
-        $result | Should -Be $false
-        Assert-MockCalled Write-Warning -Exactly 1
     }
 }

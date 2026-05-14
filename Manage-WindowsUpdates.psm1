@@ -5,7 +5,13 @@ function Test-UpdatesAvailable {
     param ([string]$Server)
     try {
         $updates = Invoke-Command -ComputerName $Server -ScriptBlock {
-            Get-WindowsUpdate -ListOnly | Where-Object { $_.IsInstalled -eq $false }
+            Import-Module PSWindowsUpdate -Global -Force
+            if (-not (Get-Module PSWindowsUpdate)) {
+                Write-Host "PSWindowsUpdate module not found. Installing..."
+                Install-Module PSWindowsUpdate -Force -Scope CurrentUser
+                Import-Module PSWindowsUpdate
+            }
+            Get-WindowsUpdate | Where-Object { $_.IsInstalled -eq $false }
         }
         return $updates.Count -gt 0
     } catch {
@@ -71,7 +77,7 @@ function Test-IsRouter {
 function Wait-ServerUp {
     param ([string]$Server, [int]$TimeoutSeconds = 300)
     $start = Get-Date
-    while ((Get-Date) - $start).TotalSeconds -lt $TimeoutSeconds) {
+    while (((Get-Date) - $start).TotalSeconds -lt $TimeoutSeconds) {
         if (Test-Connection -ComputerName $Server -Count 1 -Quiet) {
             Write-Host "$Server is back online."
             return $true

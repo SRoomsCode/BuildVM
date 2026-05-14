@@ -2,21 +2,24 @@
 # Script to manage Windows updates on a list of servers with specific rules for domain controllers and routers.
 
 param (
-    [string[]]$Servers = @("server01", "server02", "server03", "server04", "server05")
+    [string[]]$Servers = @("server01", "server02", "server03", "server04", "server05") # Example server list, replace with actual server names
 )
 
+# Alert Message
+Write-Warning 'The script must run with elevated Adminitrative permission and "As Administrator..."'
+
 # Import necessary modules
-Import-Module PSWindowsUpdate -ErrorAction SilentlyContinue
+Import-Module PSWindowsUpdate -Global -Force
 if (-not (Get-Module PSWindowsUpdate)) {
     Write-Host "PSWindowsUpdate module not found. Installing..."
     Install-Module PSWindowsUpdate -Force -Scope CurrentUser
     Import-Module PSWindowsUpdate
 }
 
-Import-Module .\Manage-WindowsUpdates.psm1
+Import-Module .\Manage-WindowsUpdates.psm1 -Global -Force
 
 # Main logic
-if ($MyInvocation.InvocationName -ne '.') {
+# if ($MyInvocation.InvocationName -ne '.') {
     $domainControllers = Get-DomainControllers
     $routers = $Servers | Where-Object { Test-IsRouter -Server $_ }
 
@@ -99,4 +102,4 @@ if ($MyInvocation.InvocationName -ne '.') {
             }
         }
     } while ($choice -ne 3)
-}
+#}
