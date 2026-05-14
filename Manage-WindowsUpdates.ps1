@@ -16,7 +16,7 @@ if (-not (Get-Module PSWindowsUpdate)) {
     Import-Module PSWindowsUpdate
 }
 
-Import-Module .\Manage-WindowsUpdates.psm1 -Global -Force
+Import-Module (Join-Path $PSScriptRoot 'Manage-WindowsUpdates.psm1') -Global -Force
 
 # Main logic
 # if ($MyInvocation.InvocationName -ne '.') {
@@ -48,23 +48,34 @@ Import-Module .\Manage-WindowsUpdates.psm1 -Global -Force
 
         switch ($choice) {
             1 {
-                # Update all servers
-                $nonRouters = $serversWithUpdates | Where-Object { $_ -notin $routers }
-                $dcs = $serversWithUpdates | Where-Object { $_ -in $domainControllers }
-                $otherServers = $nonRouters | Where-Object { $_ -notin $dcs }
-
-                # Install updates on all
-                foreach ($server in $serversWithUpdates) {
-                    Install-Updates -Server $server
+                Write-Host "\nUpdate all servers?"
+                Write-Host "1. Proceed"
+                Write-Host "2. Cancel and return to main menu"
+                $subChoice = Read-Host "Enter your choice (1-2)"
+                if ($subChoice -ne '1') {
+                    break
                 }
 
-                # Restart logic
-                # First, restart non-DC, non-router servers
+                $rebootRequiredServers = @()
+                foreach ($server in $serversWithUpdates) {
+                    if (Install-Updates -Server $server) {
+                        $rebootRequiredServers += $server
+                    }
+                }
+
+                if ($rebootRequiredServers.Count -eq 0) {
+                    Write-Host "No restart is required for any updated server."
+                    break
+                }
+
+                $nonRouters = $rebootRequiredServers | Where-Object { $_ -notin $routers }
+                $dcs = $rebootRequiredServers | Where-Object { $_ -in $domainControllers }
+                $otherServers = $nonRouters | Where-Object { $_ -notin $dcs }
+
                 foreach ($server in $otherServers) {
                     Restart-Server -Server $server
                 }
 
-                # Then, restart DCs one by one
                 foreach ($dc in $dcs) {
                     Restart-Server -Server $dc
                     if ($domainControllers.Count -gt 1) {
@@ -72,26 +83,36 @@ Import-Module .\Manage-WindowsUpdates.psm1 -Global -Force
                     }
                 }
 
-                # Finally, restart routers
-                foreach ($router in $routers) {
+                foreach ($router in $routers | Where-Object { $_ -in $rebootRequiredServers }) {
                     Restart-Server -Server $router
                 }
             }
             2 {
-                # Select specific server
-                Write-Host "Available servers with updates:"
-                for ($i = 0; $i -lt $serversWithUpdates.Count; $i++) {
-                    Write-Host "$($i+1). $($serversWithUpdates[$i])"
-                }
-                $serverChoice = Read-Host "Enter the number of the server to update (1-$($serversWithUpdates.Count))"
-                $index = [int]$serverChoice - 1
-                if ($index -ge 0 -and $index -lt $serversWithUpdates.Count) {
-                    $selectedServer = $serversWithUpdates[$index]
-                    Install-Updates -Server $selectedServer
-                    Restart-Server -Server $selectedServer
-                } else {
-                    Write-Host "Invalid choice."
-                }
+                do {
+                    Write-Host "Available servers with updates:"
+                    for ($i = 0; $i -lt $serversWithUpdates.Count; $i++) {
+                        Write-Host " $($i+1). $($serversWithUpdates[$i])"
+                    }
+                    Write-Host " 0. Exit to main menu"
+
+                    $serverChoice = Read-Host "Enter the number of the server to update (0-$($serversWithUpdates.Count))"
+                    if ($serverChoice -eq '0') {
+                        break
+                    }
+
+                    $index = [int]$serverChoice - 1
+                    if ($index -ge 0 -and $index -lt $serversWithUpdates.Count) {
+                        $selectedServer = $serversWithUpdates[$index]
+                        if (Install-Updates -Server $selectedServer) {
+                            Restart-Server -Server $selectedServer
+                        } else {
+                            Write-Host "No restart required for $selectedServer."
+                        }
+                        break
+                    }
+
+                    Write-Host "Invalid choice. Enter 0 to return or a valid number."
+                } while ($true)
             }
             3 {
                 Write-Host "Exiting."

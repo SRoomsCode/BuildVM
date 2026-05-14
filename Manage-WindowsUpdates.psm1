@@ -23,12 +23,28 @@ function Test-UpdatesAvailable {
 function Install-Updates {
     param ([string]$Server)
     try {
-        Invoke-Command -ComputerName $Server -ScriptBlock {
-            Install-WindowsUpdate -AcceptAll -IgnoreReboot
+        $updates = Invoke-Command -ComputerName $Server -ScriptBlock {
+            $installed = Install-WindowsUpdate -AcceptAll -IgnoreReboot
+            if ($installed -is [System.Collections.IEnumerable]) {
+                return $installed
+            }
+            return @($installed)
         }
-        Write-Host "Updates installed on $Server."
+
+        $rebootRequired = $updates | Where-Object {
+            $_.PSObject.Properties.Match('RebootRequired') -and $_.RebootRequired -eq $true
+        }
+
+        if ($rebootRequired) {
+            Write-Host "Updates installed on $Server and reboot is required."
+            return $true
+        }
+
+        Write-Host "Updates installed on $Server and no reboot is required."
+        return $false
     } catch {
         Write-Warning ("Failed to install updates on {0}: $_") -f $Server
+        return $false
     }
 }
 

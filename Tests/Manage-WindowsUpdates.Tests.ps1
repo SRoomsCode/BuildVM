@@ -1,8 +1,8 @@
 # Manage-WindowsUpdates.Tests.ps1
 # Pester tests for Manage-WindowsUpdates.ps1 functions
 
-# Dot source the script to load functions
-. $PSScriptRoot\..\Manage-WindowsUpdates.ps1
+$modulePath = Join-Path $PSScriptRoot '..\Manage-WindowsUpdates.psm1'
+Import-Module $modulePath -Force
 
 Describe 'Test-UpdatesAvailable' {
     Mock Invoke-Command
@@ -35,9 +35,24 @@ Describe 'Install-Updates' {
     Mock Write-Warning
 
     It 'Calls Invoke-Command to install updates and writes success message' {
-        Install-Updates -Server 'server01'
+        Mock Invoke-Command { return @(@{RebootRequired = $false}) }
+        $result = Install-Updates -Server 'server01'
+        $result | Should -Be $false
         Assert-MockCalled Invoke-Command -Exactly 1 -ParameterFilter { $ComputerName -eq 'server01' }
-        Assert-MockCalled Write-Host -Exactly 1 -ParameterFilter { $Object -eq 'Updates installed on server01.' }
+        Assert-MockCalled Write-Host -Exactly 1 -ParameterFilter { $Object -eq 'Updates installed on server01 and no reboot is required.' }
+    }
+
+    It 'Returns true when reboot is required' {
+        Mock Invoke-Command { return @(@{RebootRequired = $true}) }
+        $result = Install-Updates -Server 'server01'
+        $result | Should -Be $true
+        Assert-MockCalled Write-Host -Exactly 1 -ParameterFilter { $Object -eq 'Updates installed on server01 and reboot is required.' }
+    }
+
+    It 'Returns false when reboot is not required' {
+        Mock Invoke-Command { return @(@{RebootRequired = $false}) }
+        $result = Install-Updates -Server 'server01'
+        $result | Should -Be $false
     }
 
     It 'Writes warning on error' {
