@@ -15,7 +15,7 @@ function Test-UpdatesAvailable {
         }
         return $updates.Count -gt 0
     } catch {
-        Write-Warning ("Failed to check updates on {0}: $_") -f $Server
+        Write-Warning ("Failed to check updates on {0}: $_" -f $Server)
         return $false
     }
 }
@@ -24,7 +24,21 @@ function Install-Updates {
     param ([string]$Server)
     try {
         $updates = Invoke-Command -ComputerName $Server -ScriptBlock {
-            $installed = Install-WindowsUpdate -AcceptAll -IgnoreReboot
+            Import-Module PSWindowsUpdate -Global -Force
+            if (-not (Get-Module PSWindowsUpdate)) {
+                Write-Host "PSWindowsUpdate module not found. Installing..."
+                Install-Module PSWindowsUpdate -Force -Scope CurrentUser
+                Import-Module PSWindowsUpdate
+            }
+
+            if (Get-Command Install-WindowsUpdate -ErrorAction SilentlyContinue) {
+                $installed = Install-WindowsUpdate -AcceptAll -IgnoreReboot
+            } elseif (Get-Command Get-WindowsUpdate -ErrorAction SilentlyContinue) {
+                $installed = Get-WindowsUpdate -Install -AcceptAll -IgnoreReboot
+            } else {
+                throw 'No install command available for PSWindowsUpdate.'
+            }
+
             if ($installed -is [System.Collections.IEnumerable]) {
                 return $installed
             }
@@ -43,7 +57,7 @@ function Install-Updates {
         Write-Host "Updates installed on $Server and no reboot is required."
         return $false
     } catch {
-        Write-Warning ("Failed to install updates on {0}: $_") -f $Server
+        Write-Warning ("Failed to install updates on {0}: $_" -f $Server)
         return $false
     }
 }
@@ -54,7 +68,7 @@ function Restart-Server {
         Restart-Computer -ComputerName $Server -Force
         Write-Host "Restart initiated on $Server."
     } catch {
-        Write-Warning ("Failed to restart {0}: $_") -f $Server
+        Write-Warning ("Failed to restart {0}: $_" -f $Server)
     }
 }
 
