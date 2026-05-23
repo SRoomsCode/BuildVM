@@ -117,3 +117,95 @@ function Wait-ServerUp {
     Write-Warning "$Server did not come back online within $TimeoutSeconds seconds."
     return $false
 }
+
+# Returns detailed available updates for a given server (not just a boolean)
+function Get-AvailableUpdates {
+    param (
+        [string]$Server
+    )
+    try {
+        $updates = Invoke-Command -ComputerName $Server -ScriptBlock {
+            Import-Module PSWindowsUpdate -Global -Force
+            if (-not (Get-Module PSWindowsUpdate)) {
+                Write-Host "PSWindowsUpdate module not found. Installing..."
+                Install-Module PSWindowsUpdate -Force -Scope CurrentUser
+                Import-Module PSWindowsUpdate
+            }
+
+            if (Get-Command Get-WindowsUpdate -ErrorAction SilentlyContinue) {
+                $list = Get-WindowsUpdate | Where-Object { $_.IsInstalled -eq $false }
+            } elseif (Get-Command Get-WUList -ErrorAction SilentlyContinue) {
+                $list = Get-WUList | Where-Object { $_.IsInstalled -eq $false }
+            } else {
+                $list = @()
+            }
+
+            return $list
+        }
+
+        if (-not $updates) { return @() }
+
+        # Add Server property to each update for easier display and downstream filtering
+        $mapped = foreach ($u in $updates) {
+            $obj = [PSCustomObject]@{
+                Server = $Server
+                Title = ($u.Title -or $u.Title)
+                KBArticleIDs = ($u.KBArticleIDs -or $u.KB -or $u.KBArticleID -or $null)
+                Size = ($u.Size -or $null)
+                Severity = ($u.MsrcSeverity -or $u.Severity -or $null)
+                RebootRequired = ($u.RebootRequired -or $false)
+                Raw = $u
+            }
+            $obj
+        }
+
+        return ,$mapped
+    } catch {
+        Write-Warning ("Failed to retrieve updates from {0}: {1}" -f $Server, $_)
+        return @()
+    }
+}
+
+# Displays updates for one or multiple servers. Console output is priority; use -UseGridView to open Out-GridView.
+function Show-Updates {
+    param (
+        [string]$Server,
+        [string[]]$Servers,
+        [switch]$UseGridView
+    )
+
+    $allResults = @()
+
+    if ($Server) {
+        $serverList = @($Server)
+    } elseif ($Servers) {
+        $serverList = $Servers
+    } else {
+        Throw 'Either -Server or -Servers must be provided.'
+    }
+
+    foreach ($s in $serverList) {
+        $updates = Get-AvailableUpdates -Server $s
+        if (-not $updates -or $updates.Count -eq 0) {
+            Write-Host "Aucune mise à jour disponible sur $s."
+            continue
+        }
+
+        Write-Host ("`nMises à jour disponibles sur :`n" -f $s)
+
+        if ($UseGridView) {
+            try {
+                $updates | Out-GridView -Title "Mises à jour disponibles - $s"
+            } catch {
+                Write-Warning "Out-GridView failed or not available; falling back to console output."
+                $updates | Select-Object Server, Title, KBArticleIDs, Size, Severity, RebootRequired | Format-Table -AutoSize
+            }
+        } else {
+            $updates | Select-Object Server, Title, KBArticleIDs, Size, Severity, RebootRequired | Format-Table -AutoSize
+        }
+
+        $allResults += $updates
+    }
+
+    return ,$allResults
+}

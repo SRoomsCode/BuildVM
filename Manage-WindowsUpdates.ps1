@@ -33,18 +33,19 @@ Import-Module (Join-Path $PSScriptRoot 'Manage-WindowsUpdates.psm1') -Global -Fo
 
     if ($serversWithUpdates.Count -eq 0) {
         Write-Host "No updates available on any server."
-        exit
+    } else {
+        Write-Host "Servers with available updates: $($serversWithUpdates -join ', ')"
     }
-
-    Write-Host "Servers with available updates: $($serversWithUpdates -join ', ')"
 
     # Menu
     do {
         Write-Host "`nMenu:"
         Write-Host "1. Update all servers"
-        Write-Host "2. Select specific server"
-        Write-Host "3. Exit"
-        $choice = Read-Host "Enter your choice (1-3)"
+        Write-Host "2. Select specific server to update"
+        Write-Host "3. Afficher mises à jour pour tous les serveurs"
+        Write-Host "4. Afficher mises à jour pour un serveur spécifique"
+        Write-Host "5. Exit"
+        $choice = Read-Host "Enter your choice (1-5)"
 
         switch ($choice) {
             1 {
@@ -88,39 +89,77 @@ Import-Module (Join-Path $PSScriptRoot 'Manage-WindowsUpdates.psm1') -Global -Fo
                 }
             }
             2 {
-                do {
-                    Write-Host "Available servers with updates:"
-                    for ($i = 0; $i -lt $serversWithUpdates.Count; $i++) {
-                        Write-Host " $($i+1). $($serversWithUpdates[$i])"
-                    }
-                    Write-Host " 0. Exit to main menu"
-
-                    $serverChoice = Read-Host "Enter the number of the server to update (0-$($serversWithUpdates.Count))"
-                    if ($serverChoice -eq '0') {
-                        break
-                    }
-
-                    $index = [int]$serverChoice - 1
-                    if ($index -ge 0 -and $index -lt $serversWithUpdates.Count) {
-                        $selectedServer = $serversWithUpdates[$index]
-                        if (Install-Updates -Server $selectedServer) {
-                            Restart-Server -Server $selectedServer
-                        } else {
-                            Write-Host "No restart required for $selectedServer."
+                    do {
+                        Write-Host "Available servers:"
+                        for ($i = 0; $i -lt $Servers.Count; $i++) {
+                            Write-Host " $($i+1). $($Servers[$i])"
                         }
-                        break
-                    }
+                        Write-Host " 0. Exit to main menu"
 
-                    Write-Host "Invalid choice. Enter 0 to return or a valid number."
-                } while ($true)
+                        $serverChoice = Read-Host "Enter the number of the server to update (0-$($Servers.Count))"
+                        if ($serverChoice -eq '0') {
+                            break
+                        }
+
+                        $index = [int]$serverChoice - 1
+                        if ($index -ge 0 -and $index -lt $Servers.Count) {
+                            $selectedServer = $Servers[$index]
+                            if (Install-Updates -Server $selectedServer) {
+                                Restart-Server -Server $selectedServer
+                            } else {
+                                Write-Host "No restart required for $selectedServer."
+                            }
+                            break
+                        }
+
+                        Write-Host "Invalid choice. Enter 0 to return or a valid number."
+                    } while ($true)
             }
-            3 {
-                Write-Host "Exiting."
-                exit
-            }
+                3 {
+                    # Show available updates for all servers
+                    $useGrid = $false
+                    $gvChoice = Read-Host "Afficher avec Out-GridView ? (y/N)"
+                    if ($gvChoice -match '^(y|Y)') { $useGrid = $true }
+                    if ($useGrid) {
+                        Show-Updates -Servers $Servers -UseGridView
+                    } else {
+                        Show-Updates -Servers $Servers
+                    }
+                }
+                4 {
+                    # Show available updates for a specific server
+                    do {
+                        Write-Host "Available servers:"
+                        for ($i = 0; $i -lt $Servers.Count; $i++) {
+                            Write-Host " $($i+1). $($Servers[$i])"
+                        }
+                        Write-Host " 0. Exit to main menu"
+
+                        $serverChoice = Read-Host "Enter the number of the server to view updates (0-$($Servers.Count))"
+                        if ($serverChoice -eq '0') {
+                            break
+                        }
+
+                        $index = [int]$serverChoice - 1
+                        if ($index -ge 0 -and $index -lt $Servers.Count) {
+                            $selectedServer = $Servers[$index]
+                            $gvChoice = Read-Host "Afficher avec Out-GridView ? (y/N)"
+                            $useGrid = $false
+                            if ($gvChoice -match '^(y|Y)') { $useGrid = $true }
+                            if ($useGrid) { Show-Updates -Server $selectedServer -UseGridView } else { Show-Updates -Server $selectedServer }
+                            break
+                        }
+
+                        Write-Host "Invalid choice. Enter 0 to return or a valid number."
+                    } while ($true)
+                }
+                5 {
+                    Write-Host "Exiting."
+                    exit
+                }
             default {
                 Write-Host "Invalid choice. Please try again."
             }
         }
-    } while ($choice -ne 3)
+    } while ($choice -ne 5)
 #}

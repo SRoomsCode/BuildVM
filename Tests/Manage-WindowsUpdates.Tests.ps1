@@ -133,3 +133,39 @@ Describe 'Test-IsRouter' {
         $result | Should -Be $false
     }
 }
+
+Describe 'Get-AvailableUpdates' {
+    Mock Invoke-Command
+
+    It 'Returns mapped update objects when Invoke-Command returns updates' {
+        Mock Invoke-Command { return @(@{ Title = 'Update1'; KBArticleIDs = @('KB0001'); Size = 123; MsrcSeverity = 'Important'; RebootRequired = $true }) }
+        $result = Get-AvailableUpdates -Server 'server01'
+        $result.Count | Should -Be 1
+        $result[0].Server | Should -Be 'server01'
+        $result[0].Title | Should -Be 'Update1'
+    }
+
+    It 'Returns empty array when Invoke-Command throws' {
+        Mock Invoke-Command { throw 'Connection failed' }
+        $result = Get-AvailableUpdates -Server 'server01'
+        $result | Should -Be @()
+    }
+}
+
+Describe 'Show-Updates' {
+    Mock Get-AvailableUpdates
+    Mock Write-Host
+
+    It 'Writes a message when no updates are available' {
+        Mock Get-AvailableUpdates { return @() }
+        Show-Updates -Server 'server01'
+        Assert-MockCalled Write-Host -Exactly 1 -ParameterFilter { $Object -like '*Aucune mise à jour disponible*' }
+    }
+
+    It 'Returns update objects when updates are available' {
+        Mock Get-AvailableUpdates { return @([PSCustomObject]@{ Server = 'server01'; Title = 'U1'; KBArticleIDs = 'KB1'; Size = 10; Severity = 'Important'; RebootRequired = $false }) }
+        $result = Show-Updates -Server 'server01'
+        $result.Count | Should -Be 1
+        $result[0].Server | Should -Be 'server01'
+    }
+}
