@@ -18,7 +18,7 @@ param(
 
 #region CONFIGURATION
 
-$ServersDC     = @('server01','server02')     # Domain Controllers
+$ServersDC     = @('server01','server02')            # Domain Controllers
 $ServersNormal = @('server03')                       # Serveurs “classiques” -> 'server04'
 $ServerRouter  = 'server05'                          # Routeur → redémarrer en dernier
 
